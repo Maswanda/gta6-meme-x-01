@@ -1,8 +1,10 @@
-// main.ts — GTA 6 meme generator for make.fun bounty gta6-meme-x-01
+// main.ts — GTA 6 meme generator for make.fun bounty gta6-meme-x-01 (v2)
 // Node 22+, stdlib ONLY (node:fs, node:zlib). No network, no external assets.
-// Draws a Vice City sunset meme as a PNG (1200x675) and writes meme.png.
-// The joke: waiting 13 years for GTA 6, while my AI agent already made $500 on make.fun.
+// Draws a Vice City sunset meme as a PNG (1080x1080) and writes meme.png.
+// The joke: waiting 13 years for GTA 6, while my AI agent is chasing the $500 bounty on make.fun.
 // The make.fun ghost mascot + "make.fun" branding are worked into the scene.
+// v2 (Cue feedback): accurate punchline, square 1080x1080 canvas, navy contrast panel
+// behind the bottom text, ghost holding a bounty ticket, badge bottom-right.
 
 import { writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
@@ -109,6 +111,43 @@ class Canvas {
     this.fillCircle(x + r, y + h - r, r, c);
     this.fillCircle(x + w - r, y + h - r, r, c);
   }
+  // Alpha-blend a color over a rect (alpha 0..1): for translucent panels.
+  fillRectAlpha(x: number, y: number, w: number, h: number, c: RGB, alpha: number): void {
+    const x0 = Math.max(0, Math.floor(x)), y0 = Math.max(0, Math.floor(y));
+    const x1 = Math.min(this.w, Math.ceil(x + w)), y1 = Math.min(this.h, Math.ceil(y + h));
+    for (let yy = y0; yy < y1; yy++) {
+      for (let xx = x0; xx < x1; xx++) {
+        const i = (yy * this.w + xx) * 3;
+        this.data[i] = Math.round(this.data[i] * (1 - alpha) + c[0] * alpha);
+        this.data[i + 1] = Math.round(this.data[i + 1] * (1 - alpha) + c[1] * alpha);
+        this.data[i + 2] = Math.round(this.data[i + 2] * (1 - alpha) + c[2] * alpha);
+      }
+    }
+  }
+  fillCircleAlpha(cx: number, cy: number, r: number, c: RGB, alpha: number): void {
+    const r2 = r * r;
+    const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(this.w - 1, Math.ceil(cx + r));
+    const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(this.h - 1, Math.ceil(cy + r));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy <= r2) {
+          const i = (y * this.w + x) * 3;
+          this.data[i] = Math.round(this.data[i] * (1 - alpha) + c[0] * alpha);
+          this.data[i + 1] = Math.round(this.data[i + 1] * (1 - alpha) + c[1] * alpha);
+          this.data[i + 2] = Math.round(this.data[i + 2] * (1 - alpha) + c[2] * alpha);
+        }
+      }
+    }
+  }
+  fillRoundRectAlpha(x: number, y: number, w: number, h: number, r: number, c: RGB, alpha: number): void {
+    this.fillRectAlpha(x + r, y, w - 2 * r, h, c, alpha);
+    this.fillRectAlpha(x, y + r, w, h - 2 * r, c, alpha);
+    this.fillCircleAlpha(x + r, y + r, r, c, alpha);
+    this.fillCircleAlpha(x + w - r, y + r, r, c, alpha);
+    this.fillCircleAlpha(x + r, y + h - r, r, c, alpha);
+    this.fillCircleAlpha(x + w - r, y + h - r, r, c, alpha);
+  }
   // Vertical multi-stop gradient.
   vGradient(stops: Array<[number, RGB]>): void {
     for (let y = 0; y < this.h; y++) {
@@ -205,14 +244,21 @@ function drawGlyph(cv: Canvas, ch: string, x: number, y: number, scale: number, 
     }
   }
 }
-// Draw text with an outline (outline = 1 glyph-pixel in every direction).
-function drawText(cv: Canvas, text: string, x: number, y: number, scale: number, color: RGB, outline?: RGB): void {
+// Draw text with an outline: a disc of radius outlinePx (pixels) around each glyph.
+function drawText(cv: Canvas, text: string, x: number, y: number, scale: number, color: RGB, outline?: RGB, outlinePx?: number): void {
   const up = text.toUpperCase();
   if (outline) {
-    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      let cx = x + dx * scale;
+    const r = outlinePx ?? scale;
+    const offs: Array<[number, number]> = [];
+    for (let dy = -r; dy <= r; dy += 2) {
+      for (let dx = -r; dx <= r; dx += 2) {
+        if (dx * dx + dy * dy <= r * r) offs.push([dx, dy]);
+      }
+    }
+    for (const [dx, dy] of offs) {
+      let cx = x + dx;
       for (const ch of up) {
-        drawGlyph(cv, ch, cx, y + dy * scale, scale, outline);
+        drawGlyph(cv, ch, cx, y + dy, scale, outline);
         cx += 6 * scale;
       }
     }
@@ -223,9 +269,17 @@ function drawText(cv: Canvas, text: string, x: number, y: number, scale: number,
     cx += 6 * scale;
   }
 }
-function drawTextCentered(cv: Canvas, text: string, cx: number, y: number, scale: number, color: RGB, outline?: RGB): void {
+function drawTextCentered(cv: Canvas, text: string, cx: number, y: number, scale: number, color: RGB, outline?: RGB, outlinePx?: number): void {
   const w = textWidth(text, scale);
-  drawText(cv, text, Math.round(cx - w / 2), y, scale, color, outline);
+  drawText(cv, text, Math.round(cx - w / 2), y, scale, color, outline, outlinePx);
+}
+// Meme caption style: off-white fill, dark navy stroke (7px), thin drop shadow.
+function drawMemeText(cv: Canvas, text: string, cx: number, y: number, scale: number): void {
+  const INK: RGB = [250, 244, 230];
+  const NAVY: RGB = [26, 11, 46];
+  const SHADOW: RGB = [16, 6, 30];
+  drawTextCentered(cv, text, cx + 4, y + 5, scale, SHADOW);
+  drawTextCentered(cv, text, cx, y, scale, INK, NAVY, 7);
 }
 
 // ---------------------------------------------------------------- make.fun ghost mascot
@@ -255,6 +309,23 @@ function drawGhost(cv: Canvas, cx: number, topY: number, w: number, color: RGB, 
     const rad = (a * Math.PI) / 180;
     cv.fillCircle(cx + Math.cos(rad) * smR, smY + Math.sin(rad) * smR * 0.7, Math.max(2, r * 0.05), eyeColor);
   }
+}
+
+// Small bounty ticket: gold rect, perforation dots near the left edge, "$" mark.
+// Reads as a prize ticket the ghost is holding.
+function drawTicket(cv: Canvas, x: number, y: number, w: number, h: number): void {
+  const GOLD: RGB = [255, 214, 90];
+  const NAVY: RGB = [26, 11, 46];
+  cv.fillRect(x, y, w, h, GOLD);
+  // Perforation: vertical dotted line near the left edge.
+  const px = x + 12;
+  for (let yy = y + 5; yy < y + h - 4; yy += 5) {
+    cv.fillRect(px, yy, 2, 3, NAVY);
+  }
+  // "$" mark centered in the right portion.
+  const markX = x + Math.round((w - 10) / 2) + 6;
+  const markY = y + Math.round((h - 14) / 2);
+  drawGlyph(cv, '$', markX, markY, 2, NAVY);
 }
 
 // ---------------------------------------------------------------- Palm tree silhouette
@@ -291,12 +362,15 @@ function drawPalm(cv: Canvas, baseX: number, baseY: number, height: number, lean
   cv.fillCircle(topX + 8, topY + 8, 5, c);
 }
 
-// ---------------------------------------------------------------- Meme composition
-const W = 1200;
-const H = 675;
+// ---------------------------------------------------------------- Meme composition (v2: 1080x1080)
+const W = 1080;
+const H = 1080;
 
 function buildMeme(): Canvas {
   const cv = new Canvas(W, H);
+  const NAVY: RGB = [26, 11, 46];
+  const SIL: RGB = [21, 8, 41];
+  const WHITE: RGB = [255, 255, 255];
 
   // Sunset sky: deep purple -> magenta -> pink -> orange -> warm yellow at horizon.
   cv.vGradient([
@@ -307,11 +381,10 @@ function buildMeme(): Canvas {
     [1.0, [255, 217, 61]],
   ]);
 
-  // Synthwave sun with retro stripes.
-  const sunX = 600, sunY = 330, sunR = 105;
+  // Synthwave sun with retro stripes (centered, upper-middle).
+  const sunX = 540, sunY = 470, sunR = 130;
   const sunTop: RGB = [255, 226, 89];
   const sunBot: RGB = [255, 167, 81];
-  // Sun disc (vertical gradient approximated with horizontal bands).
   for (let y = sunY - sunR; y <= sunY + sunR; y++) {
     const dy = y - sunY;
     const half = Math.sqrt(Math.max(0, sunR * sunR - dy * dy));
@@ -319,22 +392,23 @@ function buildMeme(): Canvas {
     cv.fillRect(sunX - half, y, half * 2, 1, mixColor(sunTop, sunBot, f));
   }
   // Retro stripes across the lower half: sky-colored bars, thicker toward the bottom.
-  const stripeYs = [350, 372, 396, 422];
-  const stripeHs = [6, 9, 12, 16];
+  // Sample the sky from OUTSIDE the sun disc (the gradient is vertical, so the
+  // color depends only on y) — sampling inside the sun would return the sun's own color.
+  const stripeYs = [495, 520, 548, 578];
+  const stripeHs = [7, 10, 13, 18];
   for (let i = 0; i < stripeYs.length; i++) {
     const y = stripeYs[i];
-    const col = cv.get(sunX, y); // sample sky gradient behind the sun
+    const col = cv.get(sunX - sunR - 30, y); // clear sky left of the sun
     const dy = y - sunY;
     const half = Math.sqrt(Math.max(0, sunR * sunR - dy * dy));
     cv.fillRect(sunX - half, y, half * 2, stripeHs[i], col);
   }
 
-  // Palm silhouettes (left tall, right shorter).
-  const SIL: RGB = [21, 8, 41];
-  drawPalm(cv, 95, H, 300, 55, SIL);
-  drawPalm(cv, 1120, H, 235, -45, SIL);
+  // Palm silhouettes framing the sides (kept clear of the bottom panel).
+  drawPalm(cv, 85, H, 340, 55, SIL);
+  drawPalm(cv, 1005, H, 260, -40, SIL);
 
-  // City skyline along the very bottom (kept low in the middle so the badge stays clean).
+  // City skyline along the very bottom (short in the middle, taller at the edges).
   let x = 0;
   let seed = 12345;
   const rand = (): number => {
@@ -344,7 +418,7 @@ function buildMeme(): Canvas {
   while (x < W) {
     const bw = 46 + rand() * 55;
     const center = x + bw / 2;
-    const bh = center > 380 && center < 820 ? 18 + rand() * 22 : 34 + rand() * 78;
+    const bh = center > 380 && center < 700 ? 18 + rand() * 22 : 34 + rand() * 78;
     cv.fillRect(x, H - bh, bw, bh, SIL);
     // A few lit windows.
     for (let k = 0; k < 3; k++) {
@@ -355,26 +429,31 @@ function buildMeme(): Canvas {
     x += bw + 4;
   }
 
-  // Top caption (meme style: white text, black outline).
-  const WHITE: RGB = [255, 255, 255];
-  const BLACK: RGB = [0, 0, 0];
-  drawTextCentered(cv, 'WAITING 13 YEARS FOR GTA 6', W / 2, 42, 6, WHITE, BLACK);
+  // Top caption, two lines in the y=70-245 band (scale 9, ~85px side margins).
+  drawMemeText(cv, 'WAITING 13 YEARS', W / 2, 85, 9);
+  drawMemeText(cv, 'FOR GTA 6', W / 2, 166, 9);
 
-  // The make.fun ghost, floating by the sun, watching the sunset.
-  drawGhost(cv, 905, 215, 120, WHITE, [26, 11, 46]);
+  // The make.fun ghost (96px = ~9% of canvas width), floating beside the sun,
+  // holding a small bounty ticket at its side.
+  drawGhost(cv, 830, 390, 96, WHITE, NAVY);
+  drawTicket(cv, 870, 452, 50, 32);
 
-  // Bottom caption.
-  drawTextCentered(cv, 'MY AI AGENT ALREADY MADE $500', W / 2, 498, 6, WHITE, BLACK);
+  // Bottom caption panel: navy capsule at 60% opacity behind the bottom text.
+  cv.fillRoundRectAlpha(58, 782, 964, 166, 42, NAVY, 0.6);
 
-  // make.fun badge: dark rounded rect, small ghost + "make.fun" in white.
-  const badgeW = 340, badgeH = 62;
-  const badgeX = Math.round((W - badgeW) / 2);
-  const badgeY = 578;
-  cv.fillRoundRect(badgeX, badgeY, badgeW, badgeH, 16, [26, 11, 46]);
+  // Bottom caption, two lines in the y=780-950 band (scale 8).
+  drawMemeText(cv, 'MY AI AGENT CHASING', W / 2, 800, 8);
+  drawMemeText(cv, 'THE $500 BOUNTY', W / 2, 874, 8);
+
+  // make.fun badge, bottom-right: 216px wide (20% of canvas), 56px margins.
+  const badgeW = 216, badgeH = 52;
+  const badgeX = W - 56 - badgeW; // 808
+  const badgeY = H - 56 - badgeH; // 972
+  cv.fillRoundRect(badgeX, badgeY, badgeW, badgeH, 14, NAVY);
   // Small ghost inside the badge.
-  drawGhost(cv, badgeX + 52, badgeY + 12, 38, WHITE, [26, 11, 46]);
-  // "make.fun" text (no outline needed on dark badge).
-  drawText(cv, 'make.fun', badgeX + 82, badgeY + 15, 5, WHITE);
+  drawGhost(cv, badgeX + 27, badgeY + 11, 30, WHITE, NAVY);
+  // "make.fun" text (no outline needed on the dark badge).
+  drawText(cv, 'make.fun', badgeX + 52, badgeY + 15, 3, WHITE);
 
   return cv;
 }
