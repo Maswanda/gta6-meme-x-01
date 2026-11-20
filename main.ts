@@ -1,12 +1,14 @@
-// main.ts — GTA 6 meme generator for make.fun bounty gta6-meme-x-01 (v2)
-// Node 22+, stdlib ONLY (node:fs, node:zlib). No network, no external assets.
-// Draws a Vice City sunset meme as a PNG (1080x1080) and writes meme.png.
+// main.ts — GTA 6 meme generator for make.fun bounty gta6-meme-x-01 (v2.1)
+// Node 22+, stdlib ONLY (node:fs, node:zlib, node:path). No network, no external assets.
+// Draws a Vice City sunset meme as a PNG (1080x1080) and writes meme.png + POST.json
+// to the output dir (MAKEFUN_OUTPUT_DIR, or '.' locally).
 // The joke: waiting 13 years for GTA 6, while my AI agent is chasing the $500 bounty on make.fun.
 // The make.fun ghost mascot + "make.fun" branding are worked into the scene.
 // v2 (Cue feedback): accurate punchline, square 1080x1080 canvas, navy contrast panel
 // behind the bottom text, ghost holding a bounty ticket, badge bottom-right.
 
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
 // ---------------------------------------------------------------- CRC32
@@ -459,9 +461,12 @@ function buildMeme(): Canvas {
 }
 
 function main(): void {
+  const outDir = process.env.MAKEFUN_OUTPUT_DIR || '.';
+  mkdirSync(outDir, { recursive: true });
   const cv = buildMeme();
   const png = encodePNG(W, H, cv.data);
-  writeFileSync('meme.png', png);
+  writeFileSync(join(outDir, 'meme.png'), png);
+  writeFileSync(join(outDir, 'POST.json'), readFileSync(new URL('./POST.json', import.meta.url)));
   console.log(`meme.png written: ${W}x${H}, ${png.length} bytes`);
 }
 
